@@ -5,11 +5,12 @@ import "./styles.css";
 import {
   Dumbbell, Home, Users, Calendar, Apple, BarChart3, LogOut, Bell,
   Video, Camera, ChevronRight, RotateCcw, User, ClipboardList, Trash2, Menu, X,
-  Newspaper, PlusSquare, Swords, Download, Activity
+  Newspaper, PlusSquare, Swords, Download, Activity, Target, Clock
 } from "lucide-react";
 import { FeedPage, MatesPage, CreateModal } from "./social.jsx";
 import { exportPlanPdf } from "./pdf.js";
 import { bodyComposition } from "./bodycomp.js";
+import { muscleCategory, dayMuscleGroups, dayCategory, CATEGORY_EMOJI } from "./planDesign.js";
 
 // ============================================================
 //  ریشه
@@ -686,6 +687,7 @@ function PlanBuilder({ me }) {
           athleteName={athlete?.full_name}
           coachName={me.full_name}
           goal={athlete?.goal}
+          journeyWeeks={athlete?.journey_weeks}
           key={athleteId + (planList?.length || 0)}
         />
       )}
@@ -693,7 +695,7 @@ function PlanBuilder({ me }) {
   );
 }
 
-function WeeksOverview({ athleteId, athleteName, coachName, goal }) {
+function WeeksOverview({ athleteId, athleteName, coachName, goal, journeyWeeks }) {
   const [weeks] = useAsync(() => api.weeksOf(athleteId), [athleteId]);
   const [busy, setBusy] = useState(false);
   const keys = Object.keys(weeks || {}).sort((a, b) => a - b);
@@ -701,7 +703,7 @@ function WeeksOverview({ athleteId, athleteName, coachName, goal }) {
   const download = async () => {
     setBusy(true);
     try {
-      await exportPlanPdf({ athleteName, coachName, goal, weeks: keys.map(w => ({ week: w, plans: weeks[w] })) });
+      await exportPlanPdf({ athleteName, coachName, goal, journeyWeeks, weeks: keys.map(w => ({ week: w, plans: weeks[w] })) });
     } finally { setBusy(false); }
   };
   return (
@@ -824,16 +826,16 @@ function CoachTab({ me }) {
   const [jr] = useAsync(() => api.journeyOf(me.id), []);
   const [coach] = useAsync(() => me.coach_id ? api.getProfile(me.coach_id) : Promise.resolve(null), [me.coach_id]);
   const [week, setWeek] = useState(null);
-  const [openSession, setOpenSession] = useState(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const weeks = data?.weeks || {};
   const keys = Object.keys(weeks).map(Number).sort((a, b) => a - b);
   React.useEffect(() => { if (keys.length && week == null) setWeek(keys[0]); }, [data]);
   const plans = weeks[week] || [];
+  const daysWithPlan = plans.filter(p => p.items.length > 0).length;
   const download = async () => {
     setPdfBusy(true);
     try {
-      await exportPlanPdf({ athleteName: me.full_name, coachName: coach?.full_name, goal: me.goal, weeks: keys.map(w => ({ week: w, plans: weeks[w] })) });
+      await exportPlanPdf({ athleteName: me.full_name, coachName: coach?.full_name, goal: me.goal, journeyWeeks: jr?.totalWeeks, weeks: keys.map(w => ({ week: w, plans: weeks[w] })) });
     } finally { setPdfBusy(false); }
   };
 
@@ -857,67 +859,88 @@ function CoachTab({ me }) {
           </div>
         </div>
       )}
-      {keys.length > 0 && (
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-          <button className="btn btn-sm btn-gray" onClick={download} disabled={pdfBusy}>
-            <Download size={14} style={{ marginLeft: 6 }} /> {pdfBusy ? "در حال ساخت…" : "دانلود PDF برنامه"}
-          </button>
-        </div>
-      )}
-      <div className="chips">
+      <div className="chips" style={{ marginBottom: 8 }}>
         {keys.map(w => <button key={w} className={"week-chip" + (week === w ? " active" : "")} onClick={() => setWeek(w)}>هفته {w}</button>)}
       </div>
       {keys.length === 0 && <div className="card"><p className="muted">هنوز جلسه‌ای برایت ساخته نشده.</p></div>}
-      {plans.map((p, idx) => (
-        <div key={p.id} className="session" onClick={() => setOpenSession(openSession === p.id ? null : p.id)}>
-          <div className="s-head">
-            <div className="s-day">{DAYS[p.day].slice(0, 2)}</div>
-            <div style={{ flex: 1 }}>
-              <div className="num">جلسه {idx + 1}</div>
-              <div className="s-title">{p.title || "تمرین"}</div>
-              <div className="small" style={{ marginTop: 4 }}>
-                {p.items.length ? `${p.items.length} حرکت · حدود ${Math.max(15, p.items.length * 8)} دقیقه` : "روز استراحت 🛌"}
-              </div>
+
+      {keys.length > 0 && (
+        <div className="plan-poster">
+          <div className="plan-header">
+            <div>
+              <div className="plan-wordmark"><Dumbbell size={22} /> COACHDESK</div>
+              <div className="plan-sub">برنامه تمرینی — هفته {week}</div>
             </div>
-            <ChevronRight size={16} color="var(--muted)"
-              style={{ transform: openSession === p.id ? "rotate(-90deg)" : "none", transition: "transform .2s", flexShrink: 0 }} />
+            <button className="btn btn-sm btn-gray" onClick={download} disabled={pdfBusy}>
+              <Download size={14} style={{ marginLeft: 6 }} /> {pdfBusy ? "در حال ساخت…" : "دانلود PDF"}
+            </button>
           </div>
-          {openSession === p.id && (
-            <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
-              {p.items.map((it, i2) => <SessionItem key={it.id} it={it} idx={i2} />)}
-              {p.items.length === 0 && <p className="muted">روز استراحت 🛌</p>}
-            </div>
-          )}
+          <div className="plan-pills">
+            <div className="plan-pill"><Target size={15} color="#f97316" /><div className="pv">{me.goal || "—"}</div><div className="pl">هدف</div></div>
+            <div className="plan-pill"><Calendar size={15} color="#f97316" /><div className="pv">{daysWithPlan} روز</div><div className="pl">تعداد روز در هفته</div></div>
+            <div className="plan-pill"><Clock size={15} color="#f97316" /><div className="pv">{jr?.totalWeeks || 12} هفته</div><div className="pl">مدت زمان برنامه</div></div>
+          </div>
+          {plans.map((p, idx) => <PlanDayRow key={p.id} p={p} idx={idx} />)}
         </div>
-      ))}
+      )}
     </div>
   );
 }
 
-function SessionItem({ it, idx = 0 }) {
-  const [url, setUrl] = useState("");
+function PlanDayRow({ p, idx }) {
+  const [videoFor, setVideoFor] = useState(null);
+  const [videoUrl, setVideoUrl] = useState("");
+  const groups = dayMuscleGroups(p.items);
+  const cat = dayCategory(p.items);
+  const showVideo = async (it) => {
+    if (videoFor === it.id) { setVideoFor(null); return; }
+    setVideoFor(it.id); setVideoUrl(await api.exerciseVideoUrl(it.exercise));
+  };
   return (
-    <div className="row" style={{ alignItems: "flex-start" }}>
-      <div style={{
-        width: 24, height: 24, borderRadius: "50%", background: "var(--card)", flexShrink: 0,
-        display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "var(--muted)",
-      }}>{idx + 1}</div>
-      <div className="grow">
-        <b style={{ fontSize: 13.5, fontWeight: 600 }}>{it.exercise?.name}</b>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
-          {it.sets && <span className="badge gray">{it.sets} ست</span>}
-          {it.reps && <span className="badge gray">{it.reps} تکرار</span>}
-          {it.weight && <span className="badge gray">🏋 {it.weight}</span>}
-          {it.rest_seconds && <span className="badge gray">استراحت {it.rest_seconds}ث</span>}
-        </div>
+    <div className="plan-day">
+      <div className="plan-day-box">
+        <div className="dnum">DAY</div>
+        <div className="dbig">{idx + 1}</div>
+        <div className="dicon">{CATEGORY_EMOJI[cat]}</div>
+        <div className="dcat">{groups.length ? groups.join(" + ") : "استراحت"}</div>
       </div>
-      {(it.exercise?.video_url || it.exercise?.video_path) && !url &&
-        <button className="btn btn-sm" onClick={async (e) => { e.stopPropagation(); setUrl(await api.exerciseVideoUrl(it.exercise)); }}>
-          <Video size={13} style={{ marginLeft: 5 }} />ویدیو
-        </button>}
-      {url && (url.includes("supabase")
-        ? <video src={url} controls style={{ width: "100%", maxWidth: 300, borderRadius: 10 }} onClick={e => e.stopPropagation()} />
-        : <a className="btn btn-sm" href={url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>باز کردن</a>)}
+      {p.items.length === 0 ? (
+        <div className="plan-rest">روز استراحت 🛌</div>
+      ) : (
+        <div className="plan-table">
+          <table>
+            <thead>
+              <tr><th>#</th><th className="ex-name">حرکت</th><th>ست × تکرار</th><th></th></tr>
+            </thead>
+            <tbody>
+              {p.items.map((it, i) => {
+                const hasVideo = !!(it.exercise?.video_url || it.exercise?.video_path);
+                return (
+                  <React.Fragment key={it.id}>
+                    <tr onClick={() => hasVideo && showVideo(it)} style={{ cursor: hasVideo ? "pointer" : "default" }}>
+                      <td>{i + 1}</td>
+                      <td className="ex-name">
+                        <b>{it.exercise?.name}</b>{hasVideo && <Video size={11} style={{ marginRight: 5, verticalAlign: -1 }} color="#777" />}
+                        {it.weight && <div style={{ fontSize: 10.5, color: "#777" }}>وزنه: {it.weight}</div>}
+                      </td>
+                      <td>{it.sets || "—"} × {it.reps || "—"}</td>
+                      <td className="cat-badge">{CATEGORY_EMOJI[muscleCategory(it.exercise?.muscle_group)]}</td>
+                    </tr>
+                    {videoFor === it.id && (
+                      <tr><td colSpan={4} style={{ padding: "10px 6px", background: "#e9e6de" }}>
+                        {videoUrl ? (videoUrl.includes("supabase")
+                          ? <video src={videoUrl} controls style={{ width: "100%", maxWidth: 320, borderRadius: 8 }} />
+                          : <a href={videoUrl} target="_blank" rel="noreferrer">مشاهده ویدیو ↗</a>)
+                          : "در حال بارگذاری…"}
+                      </td></tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

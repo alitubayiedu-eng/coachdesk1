@@ -1,9 +1,9 @@
 // ============================================================
-//  خروجی PDF برنامهٔ تمرینی (قالب برندشدهٔ COACHDESK)
+//  خروجی PDF برنامهٔ تمرینی (قالب پوستری COACHDESK)
 // ============================================================
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
-import { DAYS } from "./api.js";
+import { muscleCategory, dayMuscleGroups, dayCategory, CATEGORY_EMOJI } from "./planDesign.js";
 
 function el(tag, style, html) {
   const e = document.createElement(tag);
@@ -12,72 +12,87 @@ function el(tag, style, html) {
   return e;
 }
 
-function buildTemplate({ athleteName, coachName, goal, weeks }) {
+function dayBoxHtml(p, idx) {
+  const groups = dayMuscleGroups(p.items);
+  const cat = dayCategory(p.items);
+  const rows = p.items.length === 0
+    ? `<div style="flex:1;background:#f2f0eb;color:#555;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;">روز استراحت 🛌</div>`
+    : `<div style="flex:1;background:#f2f0eb;color:#111;min-width:0;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="border-bottom:1.5px solid #111;">
+              <th style="font-size:10px;letter-spacing:1px;color:#555;padding:9px 6px;text-align:center;width:28px;">#</th>
+              <th style="font-size:10px;letter-spacing:1px;color:#555;padding:9px 6px;text-align:right;">حرکت</th>
+              <th style="font-size:10px;letter-spacing:1px;color:#555;padding:9px 6px;text-align:center;">ست × تکرار</th>
+              <th style="font-size:10px;letter-spacing:1px;color:#555;padding:9px 6px;text-align:center;width:34px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${p.items.map((it, i) => `
+              <tr style="border-bottom:1px solid #dedad0;">
+                <td style="font-size:12.5px;padding:9px 6px;text-align:center;">${i + 1}</td>
+                <td style="font-size:12.5px;padding:9px 6px;text-align:right;">
+                  <b>${it.exercise?.name || "—"}</b>
+                  ${it.weight ? `<div style="font-size:10.5px;color:#777;">وزنه: ${it.weight}</div>` : ""}
+                </td>
+                <td style="font-size:12.5px;padding:9px 6px;text-align:center;">${it.sets || "—"} × ${it.reps || "—"}</td>
+                <td style="font-size:15px;padding:9px 6px;text-align:center;">${CATEGORY_EMOJI[muscleCategory(it.exercise?.muscle_group)]}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>`;
+  return `
+    <div style="display:flex;margin-bottom:14px;border-radius:14px;overflow:hidden;border:1px solid #232326;">
+      <div style="background:#000;color:#fff;width:96px;flex-shrink:0;padding:14px 8px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;">
+        <div style="font-size:9.5px;letter-spacing:2px;color:#8a8a8a;font-weight:700;">DAY</div>
+        <div style="font-size:24px;font-weight:800;line-height:1;">${idx + 1}</div>
+        <div style="font-size:18px;margin-top:2px;">${CATEGORY_EMOJI[cat]}</div>
+        <div style="font-size:9px;color:#c9c9c9;font-weight:600;line-height:1.5;">${groups.length ? groups.join(" + ") : "استراحت"}</div>
+      </div>
+      ${rows}
+    </div>`;
+}
+
+function buildTemplate({ athleteName, coachName, goal, journeyWeeks, weeks }) {
   const wrap = el("div", {
     position: "fixed", top: "0", left: "-9999px", width: "780px",
-    background: "#0b0b0c", color: "#fff", fontFamily: "Vazirmatn, Tahoma, sans-serif",
-    direction: "rtl", padding: "30px", boxSizing: "border-box",
+    background: "#000", color: "#fff", fontFamily: "Vazirmatn, Tahoma, sans-serif",
+    direction: "rtl", padding: "26px", boxSizing: "border-box",
   });
 
   wrap.appendChild(el("div", {
     display: "flex", justifyContent: "space-between", alignItems: "center",
-    borderBottom: "2px solid #2a2a2e", paddingBottom: "16px", marginBottom: "22px",
+    borderBottom: "2px solid #232326", paddingBottom: "16px", marginBottom: "18px",
   }, `
-    <div style="font-size:24px;font-weight:800;letter-spacing:.5px;">🏋️ COACHDESK</div>
-    <div style="font-size:12px;color:#9a9a9a;">تاریخ صدور: ${new Date().toLocaleDateString("fa-IR")}</div>
+    <div>
+      <div style="font-size:26px;font-weight:700;letter-spacing:.5px;">🏋️ COACHDESK</div>
+      <div style="font-size:11px;color:#8a8a8a;letter-spacing:2px;margin-top:2px;">برنامهٔ تمرینی — ${athleteName || ""}</div>
+    </div>
+    <div style="font-size:11px;color:#8a8a8a;text-align:left;">تاریخ صدور: ${new Date().toLocaleDateString("fa-IR")}${coachName ? "<br/>مربی: " + coachName : ""}</div>
   `));
 
-  wrap.appendChild(el("div", {
-    background: "linear-gradient(135deg,#181819,#111112)", border: "1px solid #2a2a2e",
-    borderRadius: "16px", padding: "20px 22px", marginBottom: "26px",
-  }, `
-    <div style="font-size:21px;font-weight:800;margin-bottom:8px;">برنامهٔ تمرینی — ${athleteName}</div>
-    <div style="font-size:13px;color:#b5b5b5;line-height:1.9;">
-      ${coachName ? "مربی: " + coachName : ""} ${goal ? " &nbsp;·&nbsp; هدف: " + goal : ""}
+  wrap.appendChild(el("div", { display: "flex", gap: "10px", marginBottom: "20px" }, `
+    <div style="flex:1;background:#141416;border:1px solid #232326;border-radius:12px;padding:10px 12px;text-align:center;">
+      <div style="font-size:14px;font-weight:700;">${goal || "—"}</div>
+      <div style="font-size:10.5px;color:#8a8a8a;margin-top:2px;">هدف</div>
+    </div>
+    <div style="flex:1;background:#141416;border:1px solid #232326;border-radius:12px;padding:10px 12px;text-align:center;">
+      <div style="font-size:14px;font-weight:700;">${weeks.length} هفته</div>
+      <div style="font-size:10.5px;color:#8a8a8a;margin-top:2px;">هفته‌های برنامه‌ریزی‌شده</div>
+    </div>
+    <div style="flex:1;background:#141416;border:1px solid #232326;border-radius:12px;padding:10px 12px;text-align:center;">
+      <div style="font-size:14px;font-weight:700;">${journeyWeeks || 12} هفته</div>
+      <div style="font-size:10.5px;color:#8a8a8a;margin-top:2px;">مدت زمان کل برنامه</div>
     </div>
   `));
 
   weeks.forEach(({ week, plans }) => {
     const weekBlock = el("div", { marginBottom: "18px" });
     weekBlock.appendChild(el("div", {
-      fontSize: "16px", fontWeight: "800", color: "#ff5a1f",
+      fontSize: "15px", fontWeight: "700", color: "#ff5a1f",
       margin: "0 0 12px", borderRight: "4px solid #ff5a1f", paddingRight: "10px",
     }, `هفته ${week}`));
-
-    plans.forEach(p => {
-      const dayCard = el("div", {
-        background: "#151517", border: "1px solid #232326", borderRadius: "12px",
-        padding: "14px 16px", marginBottom: "10px",
-      });
-      dayCard.appendChild(el("div", {
-        display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px",
-      }, `
-        <span style="font-weight:700;font-size:14px;">${DAYS[p.day]}${p.title ? " — " + p.title : ""}</span>
-        <span style="font-size:11px;color:#8a8a8a;">${p.items.length} حرکت</span>
-      `));
-      if (p.items.length === 0) {
-        dayCard.appendChild(el("div", { fontSize: "12px", color: "#8a8a8a" }, "روز استراحت 🛌"));
-      } else {
-        const table = el("table", { width: "100%", borderCollapse: "collapse", fontSize: "12px" });
-        table.innerHTML = `
-          <thead><tr style="color:#8a8a8a;text-align:center;">
-            <th style="padding:6px 4px;text-align:right;">حرکت</th>
-            <th style="padding:6px 4px;">ست</th><th style="padding:6px 4px;">تکرار</th>
-            <th style="padding:6px 4px;">استراحت</th><th style="padding:6px 4px;">وزنه</th>
-          </tr></thead>
-          <tbody>${p.items.map(i => `
-            <tr style="border-top:1px solid #232326;">
-              <td style="padding:7px 4px;text-align:right;">${i.exercise?.name || "—"}</td>
-              <td style="padding:7px 4px;text-align:center;">${i.sets || "—"}</td>
-              <td style="padding:7px 4px;text-align:center;">${i.reps || "—"}</td>
-              <td style="padding:7px 4px;text-align:center;">${i.rest_seconds ? i.rest_seconds + "ث" : "—"}</td>
-              <td style="padding:7px 4px;text-align:center;">${i.weight || "—"}</td>
-            </tr>`).join("")}
-          </tbody>`;
-        dayCard.appendChild(table);
-      }
-      weekBlock.appendChild(dayCard);
-    });
+    plans.forEach((p, idx) => weekBlock.appendChild(el("div", null, dayBoxHtml(p, idx))));
     wrap.appendChild(weekBlock);
   });
 
@@ -86,19 +101,19 @@ function buildTemplate({ athleteName, coachName, goal, weeks }) {
   }
 
   wrap.appendChild(el("div", {
-    textAlign: "center", fontSize: "11px", color: "#5a5a5a", marginTop: "24px",
-    borderTop: "1px solid #2a2a2e", paddingTop: "14px",
+    textAlign: "center", fontSize: "11px", color: "#5a5a5a", marginTop: "20px",
+    borderTop: "1px solid #232326", paddingTop: "14px",
   }, "ساخته‌شده با COACHDESK"));
 
   return wrap;
 }
 
-export async function exportPlanPdf({ athleteName, coachName, goal, weeks }) {
-  const node = buildTemplate({ athleteName, coachName, goal, weeks });
+export async function exportPlanPdf({ athleteName, coachName, goal, journeyWeeks, weeks }) {
+  const node = buildTemplate({ athleteName, coachName, goal, journeyWeeks, weeks });
   document.body.appendChild(node);
   await new Promise(r => setTimeout(r, 60));
   try {
-    const canvas = await html2canvas(node, { scale: 2, backgroundColor: "#0b0b0c", useCORS: true });
+    const canvas = await html2canvas(node, { scale: 2, backgroundColor: "#000000", useCORS: true });
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     const margin = 8;
     const pageWidth = doc.internal.pageSize.getWidth() - margin * 2;
