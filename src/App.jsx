@@ -190,7 +190,7 @@ function Ring({ value, label, size = 170 }) {
 //  نمودار وزن (SVG ساده)
 // ============================================================
 function WeightChart({ weights }) {
-  if (weights.length < 2) return <p className="muted">برای نمودار حداقل دو گزارش با وزن لازم است.</p>;
+  if (!weights || weights.length < 2) return <p className="muted">برای نمودار حداقل دو گزارش با وزن لازم است.</p>;
   const W = 520, H = 160, P = 28;
   const vals = weights.map(x => x.w);
   const min = Math.min(...vals), max = Math.max(...vals);
@@ -464,14 +464,21 @@ function EditProfile({ a, onSave }) {
     hip_cm: a.hip_cm || "", arm_cm: a.arm_cm || "", thigh_cm: a.thigh_cm || "",
   });
   const num = k => ({ value: f[k], onChange: e => setF({ ...f, [k]: e.target.value }) });
+  const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
   const save = async () => {
-    await api.updateProfile(a.id, {
-      full_name: f.full_name, phone: f.phone, goal: f.goal, sex: f.sex || null,
-      birth_year: +f.birth_year || null, height_cm: +f.height_cm || null, weight_kg: +f.weight_kg || null,
-      neck_cm: +f.neck_cm || null, waist_cm: +f.waist_cm || null, hip_cm: +f.hip_cm || null,
-      arm_cm: +f.arm_cm || null, thigh_cm: +f.thigh_cm || null,
-    });
-    onSave();
+    setBusy(true); setMsg("");
+    try {
+      await api.updateProfile(a.id, {
+        full_name: f.full_name, phone: f.phone, goal: f.goal, sex: f.sex || null,
+        birth_year: +f.birth_year || null, height_cm: +f.height_cm || null, weight_kg: +f.weight_kg || null,
+        neck_cm: +f.neck_cm || null, waist_cm: +f.waist_cm || null, hip_cm: +f.hip_cm || null,
+        arm_cm: +f.arm_cm || null, thigh_cm: +f.thigh_cm || null,
+      });
+      onSave();
+    } catch (e) {
+      setMsg("خطا در ذخیره: " + e.message);
+    }
+    setBusy(false);
   };
   return (
     <div className="card">
@@ -508,7 +515,8 @@ function EditProfile({ a, onSave }) {
       </div>
       {f.sex === "female" && <p className="small muted" style={{ marginTop: -6 }}>* برای محاسبهٔ چربی بدن در خانم‌ها، دور باسن لازم است.</p>}
 
-      <button className="btn" onClick={save}>ذخیره</button>
+      <button className="btn" onClick={save} disabled={busy}>{busy ? "…" : "ذخیره"}</button>
+      {msg && <p className="muted" style={{ color: "var(--red)" }}>{msg}</p>}
     </div>
   );
 }
@@ -585,15 +593,19 @@ function PlanBuilder({ me }) {
   const [planList, , reloadList] = useAsync(() => athleteId ? api.plansListOf(athleteId) : Promise.resolve([]), [athleteId]);
   const [existing, , reloadExisting] = useAsync(() => athleteId ? api.getPlan(athleteId, week, day) : Promise.resolve(null), [athleteId, week, day]);
   const [title, setTitle] = useState("");
-  const [items, setItems] = useState([{ exercise_id: "", sets: "", reps: "", rest_seconds: "", weight: "" }]);
+  const blankItem = { exercise_id: "", group: "", sets: "", reps: "", rest_seconds: "", weight: "" };
+  const [items, setItems] = useState([{ ...blankItem }]);
   const [msg, setMsg] = useState("");
 
   React.useEffect(() => { if (athletes && athletes.length && !athleteId) setAthleteId(athletes[0].id); }, [athletes]);
   React.useEffect(() => {
     if (existing) {
       setTitle(existing.title || "");
-      setItems(existing.items.map(i => ({ exercise_id: i.exercise_id, sets: i.sets || "", reps: i.reps || "", rest_seconds: i.rest_seconds || "", weight: i.weight || "" })));
-    } else { setTitle(""); setItems([{ exercise_id: "", sets: "", reps: "", rest_seconds: "", weight: "" }]); }
+      setItems(existing.items.map(i => ({
+        exercise_id: i.exercise_id, sets: i.sets || "", reps: i.reps || "", rest_seconds: i.rest_seconds || "", weight: i.weight || "",
+        group: (exercises || []).find(ex => ex.id === i.exercise_id)?.muscle_group || "",
+      })));
+    } else { setTitle(""); setItems([{ ...blankItem }]); }
     setMsg("");
   }, [existing]);
 
@@ -601,6 +613,7 @@ function PlanBuilder({ me }) {
   const maxWeek = Math.max(4, ...(planList || []).map(p => p.week), 1) + 1;
   const setItem = (i, k, v) => setItems(items.map((it, idx) => idx === i ? { ...it, [k]: v } : it));
   const hasPlan = (w, d) => (planList || []).some(p => p.week === w && p.day === d);
+  const groups = [...new Set((exercises || []).map(ex => ex.muscle_group).filter(Boolean))].sort();
   const save = async () => {
     if (!athleteId) { setMsg("ورزشجو را انتخاب کن"); return; }
     setMsg("در حال ذخیره…");
@@ -635,19 +648,32 @@ function PlanBuilder({ me }) {
           <b>هفته {week} — {DAYS[day]}</b> {existing && <span className="badge orange" style={{ marginRight: 8 }}>ویرایش</span>}
           <input className="input" style={{ marginTop: 10 }} placeholder="عنوان" value={title} onChange={e => setTitle(e.target.value)} />
           {items.map((it, i) => (
-            <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
-              <select className="input" style={{ flex: 2, marginBottom: 0, minWidth: 130 }} value={it.exercise_id} onChange={e => setItem(i, "exercise_id", e.target.value)}>
-                <option value="">حرکت</option>
-                {(exercises || []).map(ex => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
-              </select>
-              <input className="input" style={{ width: 62, marginBottom: 0 }} placeholder="ست" value={it.sets} onChange={e => setItem(i, "sets", e.target.value)} />
-              <input className="input" style={{ width: 72, marginBottom: 0 }} placeholder="تکرار" value={it.reps} onChange={e => setItem(i, "reps", e.target.value)} />
-              <input className="input" style={{ width: 88, marginBottom: 0 }} placeholder="استراحت" value={it.rest_seconds} onChange={e => setItem(i, "rest_seconds", e.target.value)} />
-              <input className="input" style={{ width: 72, marginBottom: 0 }} placeholder="وزنه" value={it.weight} onChange={e => setItem(i, "weight", e.target.value)} />
+            <div key={i} style={{ background: "var(--card2)", border: "1px solid var(--border)", borderRadius: 12, padding: 10, marginBottom: 8 }}>
+              <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+                <select className="input" style={{ flex: 1, marginBottom: 0, minWidth: 120 }} value={it.group}
+                  onChange={e => setItems(items.map((x, idx) => idx === i ? { ...x, group: e.target.value, exercise_id: "" } : x))}>
+                  <option value="">۱. گروه عضلانی</option>
+                  {groups.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+                <select className="input" style={{ flex: 2, marginBottom: 0, minWidth: 150 }} value={it.exercise_id} disabled={!it.group}
+                  onChange={e => setItem(i, "exercise_id", e.target.value)}>
+                  <option value="">{it.group ? "۲. حرکت" : "اول گروه را انتخاب کن"}</option>
+                  {(exercises || []).filter(ex => ex.muscle_group === it.group).map(ex => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
+                </select>
+                <button className="btn-ghost" style={{ padding: "6px 8px" }} onClick={() => setItems(items.length > 1 ? items.filter((_, idx) => idx !== i) : [{ ...blankItem }])} title="حذف حرکت">
+                  <X size={15} />
+                </button>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <input className="input" style={{ width: 62, marginBottom: 0 }} placeholder="ست" value={it.sets} onChange={e => setItem(i, "sets", e.target.value)} />
+                <input className="input" style={{ width: 72, marginBottom: 0 }} placeholder="تکرار" value={it.reps} onChange={e => setItem(i, "reps", e.target.value)} />
+                <input className="input" style={{ width: 88, marginBottom: 0 }} placeholder="استراحت" value={it.rest_seconds} onChange={e => setItem(i, "rest_seconds", e.target.value)} />
+                <input className="input" style={{ width: 72, marginBottom: 0 }} placeholder="وزنه" value={it.weight} onChange={e => setItem(i, "weight", e.target.value)} />
+              </div>
             </div>
           ))}
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-            <button className="btn btn-sm btn-gray" onClick={() => setItems([...items, { exercise_id: "", sets: "", reps: "", rest_seconds: "", weight: "" }])}>+ حرکت</button>
+            <button className="btn btn-sm btn-gray" onClick={() => setItems([...items, { ...blankItem }])}>+ حرکت</button>
             <button className="btn btn-sm" onClick={save}>ذخیره برنامه</button>
             {existing && <button className="btn btn-sm btn-red" onClick={async () => { if (confirm("حذف شود؟")) { await api.deletePlan(existing.id); reloadList(); reloadExisting(); } }}>حذف</button>}
           </div>
@@ -747,17 +773,36 @@ function Diets({ me }) {
 }
 
 function ReportRow({ r, onSeen }) {
+  const [open, setOpen] = useState(false);
+  const logs = r.exerciseLogs || [];
+  const doneCount = logs.filter(l => l.done).length;
   return (
-    <div className={"row" + (!r.coach_seen ? " unseen" : "")}>
-      <span className={"badge " + (r.completed ? "green" : "gray")}>{r.completed ? "✓ انجام شد" : "✗ ناقص"}</span>
-      <div className="grow">
-        <b style={{ fontSize: 14 }}>{r.athlete?.full_name}</b>
-        <span className="small" style={{ marginRight: 8 }}>{r.report_date}{r.plan && ` · هفته ${r.plan.week} — ${DAYS[r.plan.day]}`}</span>
-        {r.notes && <div className="small">{r.notes}</div>}
+    <div className={"row" + (!r.coach_seen ? " unseen" : "")} style={{ flexDirection: "column", alignItems: "stretch" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, width: "100%" }}>
+        <span className={"badge " + (r.completed ? "green" : "gray")}>{r.completed ? "✓ انجام شد" : "✗ ناقص"}</span>
+        <div className="grow" style={{ cursor: logs.length ? "pointer" : "default" }} onClick={() => logs.length && setOpen(!open)}>
+          <b style={{ fontSize: 13.5 }}>{r.athlete?.full_name}</b>
+          <span className="small" style={{ marginRight: 8 }}>{r.report_date}{r.plan && ` · هفته ${r.plan.week} — ${DAYS[r.plan.day]}`}</span>
+          {logs.length > 0 && <span className="small" style={{ marginRight: 8 }}>· {doneCount}/{logs.length} حرکت</span>}
+          {r.notes && <div className="small">{r.notes}</div>}
+        </div>
+        {r.weight_kg && <span className="muted">{r.weight_kg}kg</span>}
+        {r.energy_level && <span className="muted">⚡{r.energy_level}/5</span>}
+        {!r.coach_seen && onSeen && <button className="btn btn-sm" onClick={() => onSeen(r.id)}>دیدم</button>}
       </div>
-      {r.weight_kg && <span className="muted">{r.weight_kg}kg</span>}
-      {r.energy_level && <span className="muted">⚡{r.energy_level}/5</span>}
-      {!r.coach_seen && onSeen && <button className="btn btn-sm" onClick={() => onSeen(r.id)}>دیدم</button>}
+      {open && logs.length > 0 && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 6 }}>
+          {logs.map(l => (
+            <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
+              <span>{l.done ? "✅" : "▫️"}</span>
+              <b style={{ fontWeight: 600 }}>{l.name}</b>
+              {l.set_weights?.filter(Boolean).length > 0 && (
+                <span className="muted">وزنه‌ها: {l.set_weights.filter(Boolean).join("، ")}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -826,16 +871,20 @@ function CoachTab({ me }) {
       {plans.map((p, idx) => (
         <div key={p.id} className="session" onClick={() => setOpenSession(openSession === p.id ? null : p.id)}>
           <div className="s-head">
-            <div>
-              <div className="num">جلسه {idx + 1} · {DAYS[p.day]}</div>
+            <div className="s-day">{DAYS[p.day].slice(0, 2)}</div>
+            <div style={{ flex: 1 }}>
+              <div className="num">جلسه {idx + 1}</div>
               <div className="s-title">{p.title || "تمرین"}</div>
-              <div className="small" style={{ marginTop: 6 }}>{p.items.length} حرکت · حدود {Math.max(15, p.items.length * 8)} دقیقه</div>
+              <div className="small" style={{ marginTop: 4 }}>
+                {p.items.length ? `${p.items.length} حرکت · حدود ${Math.max(15, p.items.length * 8)} دقیقه` : "روز استراحت 🛌"}
+              </div>
             </div>
-            <span className="badge">{p.items.length ? "شروع" : "استراحت"}</span>
+            <ChevronRight size={16} color="var(--muted)"
+              style={{ transform: openSession === p.id ? "rotate(-90deg)" : "none", transition: "transform .2s", flexShrink: 0 }} />
           </div>
           {openSession === p.id && (
             <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
-              {p.items.map(it => <SessionItem key={it.id} it={it} />)}
+              {p.items.map((it, i2) => <SessionItem key={it.id} it={it} idx={i2} />)}
               {p.items.length === 0 && <p className="muted">روز استراحت 🛌</p>}
             </div>
           )}
@@ -845,14 +894,21 @@ function CoachTab({ me }) {
   );
 }
 
-function SessionItem({ it }) {
+function SessionItem({ it, idx = 0 }) {
   const [url, setUrl] = useState("");
   return (
-    <div className="row">
+    <div className="row" style={{ alignItems: "flex-start" }}>
+      <div style={{
+        width: 24, height: 24, borderRadius: "50%", background: "var(--card)", flexShrink: 0,
+        display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "var(--muted)",
+      }}>{idx + 1}</div>
       <div className="grow">
-        <b>{it.exercise?.name}</b>
-        <div className="small">
-          {it.sets && `${it.sets} ست`} {it.reps && `× ${it.reps}`}{it.weight && ` · ${it.weight}`} {it.rest_seconds && ` · استراحت ${it.rest_seconds}ث`}
+        <b style={{ fontSize: 13.5, fontWeight: 600 }}>{it.exercise?.name}</b>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
+          {it.sets && <span className="badge gray">{it.sets} ست</span>}
+          {it.reps && <span className="badge gray">{it.reps} تکرار</span>}
+          {it.weight && <span className="badge gray">🏋 {it.weight}</span>}
+          {it.rest_seconds && <span className="badge gray">استراحت {it.rest_seconds}ث</span>}
         </div>
       </div>
       {(it.exercise?.video_url || it.exercise?.video_path) && !url &&
@@ -884,31 +940,83 @@ function MyDiet({ me }) {
 function MyReport({ me }) {
   const [plans] = useAsync(() => api.plansListOf(me.id), []);
   const [planId, setPlanId] = useState("");
-  const [completed, setCompleted] = useState(true);
+  const selectedPlan = (plans || []).find(p => p.id === planId);
+  const [full, , reloadFull] = useAsync(
+    () => selectedPlan ? api.getPlan(me.id, selectedPlan.week, selectedPlan.day) : Promise.resolve(null),
+    [selectedPlan?.id]
+  );
+  const [logs, setLogs] = useState({});
   const [weight, setWeight] = useState(""); const [energy, setEnergy] = useState(3); const [notes, setNotes] = useState("");
-  const [msg, setMsg] = useState("");
+  const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
+
+  React.useEffect(() => {
+    if (full) {
+      const init = {};
+      full.items.forEach(it => { init[it.id] = { done: true, setWeights: Array.from({ length: +it.sets || 1 }, () => it.weight || "") }; });
+      setLogs(init);
+    } else setLogs({});
+  }, [full]);
+
+  const toggleDone = id => setLogs(l => ({ ...l, [id]: { ...l[id], done: !l[id]?.done } }));
+  const setSetWeight = (id, i, v) => setLogs(l => ({ ...l, [id]: { ...l[id], setWeights: l[id].setWeights.map((w, idx) => idx === i ? v : w) } }));
+
   const submit = async () => {
-    setMsg("در حال ثبت…");
-    await api.addReport(me.id, planId, completed, weight, energy, notes);
-    setMsg("✅ گزارش ثبت شد و مربی می‌بیند"); setNotes(""); setWeight("");
+    setBusy(true); setMsg("در حال ثبت…");
+    const exerciseLogs = full ? full.items.map(it => ({
+      exercise_id: it.exercise_id, name: it.exercise?.name || "",
+      done: !!logs[it.id]?.done, set_weights: logs[it.id]?.setWeights || [],
+    })) : [];
+    const completed = exerciseLogs.length ? exerciseLogs.every(e => e.done) : true;
+    try {
+      await api.addReport(me.id, planId, completed, weight, energy, notes, exerciseLogs);
+      setMsg("✅ گزارش ثبت شد و مربی می‌بیند"); setNotes(""); setWeight(""); reloadFull();
+    } catch (e) {
+      setMsg("خطا در ثبت: " + e.message);
+    }
+    setBusy(false);
   };
+
   return (
-    <div className="card" style={{ maxWidth: 560 }}>
+    <div className="card" style={{ maxWidth: 600 }}>
       <h3>گزارش امروز</h3><p className="sub">بعد از هر جلسه پر کن</p>
       <label className="lbl">جلسه مربوطه</label>
       <select className="input" value={planId} onChange={e => setPlanId(e.target.value)}>
         <option value="">— اختیاری —</option>
         {(plans || []).map(p => <option key={p.id} value={p.id}>هفته {p.week} — {DAYS[p.day]} ({p.title})</option>)}
       </select>
-      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <input type="checkbox" checked={completed} onChange={e => setCompleted(e.target.checked)} /> تمرین را کامل انجام دادم
-      </label>
-      <label className="lbl">وزن امروز (kg)</label>
+
+      {full && full.items.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <label className="lbl">حرکات این جلسه — انجام‌شده را تیک بزن و وزنهٔ واقعی هر ست را بنویس</label>
+          {full.items.map(it => {
+            const log = logs[it.id] || { done: false, setWeights: [] };
+            return (
+              <div key={it.id} className={"ex-log" + (log.done ? " done" : "")}>
+                <label className="ex-log-head">
+                  <input type="checkbox" checked={!!log.done} onChange={() => toggleDone(it.id)} />
+                  <span className="ex-log-name">{it.exercise?.name || "—"}</span>
+                  {it.reps && <span className="small">{it.reps} تکرار</span>}
+                </label>
+                {log.done && log.setWeights.length > 0 && (
+                  <div className="ex-log-sets">
+                    {log.setWeights.map((w, i) => (
+                      <input key={i} className="set-input" placeholder={`ست ${i + 1} · kg`} value={w}
+                        onChange={e => setSetWeight(it.id, i, e.target.value)} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <label className="lbl">وزن بدن امروز (kg)</label>
       <input className="input" value={weight} onChange={e => setWeight(e.target.value)} />
       <label className="lbl">سطح انرژی: {energy}/5</label>
       <input className="input" type="range" min="1" max="5" value={energy} onChange={e => setEnergy(e.target.value)} />
       <textarea className="input" style={{ height: 90 }} placeholder="توضیحات…" value={notes} onChange={e => setNotes(e.target.value)} />
-      <button className="btn" onClick={submit}>ثبت گزارش</button>
+      <button className="btn" onClick={submit} disabled={busy}>ثبت گزارش</button>
       {msg && <p className="muted">{msg}</p>}
     </div>
   );

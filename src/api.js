@@ -80,7 +80,8 @@ export const api = {
     if (patch.photo && patch.photo.startsWith("data:")) {
       patch.photo = await uploadDataUrl("progress-photos", id, patch.photo);
     }
-    const { data } = await supabase.from("profiles").update(patch).eq("id", id).select().single();
+    const { data, error } = await supabase.from("profiles").update(patch).eq("id", id).select().single();
+    if (error) throw error;
     return data;
   },
   async athletesOf(coachId) {
@@ -176,24 +177,33 @@ export const api = {
   },
 
   // ---------- گزارش ----------
-  async addReport(athleteId, plan_id, completed, weight_kg, energy_level, notes) {
-    const { data } = await supabase.from("daily_reports").insert({
+  async addReport(athleteId, plan_id, completed, weight_kg, energy_level, notes, exerciseLogs) {
+    const { data, error } = await supabase.from("daily_reports").insert({
       athlete_id: athleteId, plan_id: plan_id || null, report_date: today(),
       completed, weight_kg: weight_kg ? +weight_kg : null, energy_level: +energy_level, notes,
     }).select().single();
+    if (error) throw error;
+    if (exerciseLogs && exerciseLogs.length) {
+      const rows = exerciseLogs.map((l, idx) => ({
+        report_id: data.id, exercise_id: l.exercise_id || null, name: l.name || "",
+        done: !!l.done, set_weights: l.set_weights || [], order_index: idx,
+      }));
+      const { error: exError } = await supabase.from("report_exercises").insert(rows);
+      if (exError) throw exError;
+    }
     return data;
   },
   async reportsOf(athleteId) {
     const { data } = await supabase.from("daily_reports")
-      .select("*, workout_plans(week, day)").eq("athlete_id", athleteId)
+      .select("*, workout_plans(week, day), report_exercises(*)").eq("athlete_id", athleteId)
       .order("report_date");
-    return (data || []).map(r => ({ ...r, plan: r.workout_plans }));
+    return (data || []).map(r => ({ ...r, plan: r.workout_plans, exerciseLogs: (r.report_exercises || []).sort((a, b) => a.order_index - b.order_index) }));
   },
   async reportsForCoach(coachId) {
     const { data } = await supabase.from("daily_reports")
-      .select("*, profiles!daily_reports_athlete_id_fkey(full_name), workout_plans(week, day)")
+      .select("*, profiles!daily_reports_athlete_id_fkey(full_name), workout_plans(week, day), report_exercises(*)")
       .order("report_date", { ascending: false });
-    return (data || []).map(r => ({ ...r, athlete: r.profiles, plan: r.workout_plans }));
+    return (data || []).map(r => ({ ...r, athlete: r.profiles, plan: r.workout_plans, exerciseLogs: (r.report_exercises || []).sort((a, b) => a.order_index - b.order_index) }));
   },
   async markSeen(id) { await supabase.from("daily_reports").update({ coach_seen: true }).eq("id", id); },
 
