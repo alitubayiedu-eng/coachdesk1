@@ -470,7 +470,7 @@ function EditProfile({ a, onSave }) {
     try {
       await api.updateProfile(a.id, {
         full_name: f.full_name, phone: f.phone, goal: f.goal, sex: f.sex || null,
-        birth_year: +f.birth_year || null, height_cm: +f.height_cm || null, weight_kg: +f.weight_kg || null,
+        birth_year: +f.birth_year || null, height_cm: Math.round(+f.height_cm) || null, weight_kg: +f.weight_kg || null,
         neck_cm: +f.neck_cm || null, waist_cm: +f.waist_cm || null, hip_cm: +f.hip_cm || null,
         arm_cm: +f.arm_cm || null, thigh_cm: +f.thigh_cm || null,
       });
