@@ -71,7 +71,8 @@ export const api = {
 
   // ---------- پروفایل ----------
   async getProfile(id) {
-    const { data } = await supabase.from("profiles").select("*").eq("id", id).single();
+    const { data, error } = await supabase.from("profiles").select("*").eq("id", id).single();
+    if (error) throw error;
     if (data && data.photo) data.photo = await signedUrl("progress-photos", data.photo).catch(() => data.photo);
     return data;
   },
@@ -85,7 +86,8 @@ export const api = {
     return data;
   },
   async athletesOf(coachId) {
-    const { data } = await supabase.from("profiles").select("*").eq("coach_id", coachId).order("full_name");
+    const { data, error } = await supabase.from("profiles").select("*").eq("coach_id", coachId).order("full_name");
+    if (error) throw error;
     return data || [];
   },
   // ساخت ورزشجو: از Edge Function استفاده می‌شود تا نشست مربی حفظ شود.
@@ -93,23 +95,26 @@ export const api = {
   async addAthlete(coachId, full_name, email, password) {
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) return { error: error.message };
-    await supabase.from("profiles").insert({
+    const { error: profError } = await supabase.from("profiles").insert({
       id: data.user.id, full_name, role: "athlete", coach_id: coachId, journey_weeks: 12, current_week: 1,
     });
+    if (profError) return { error: profError.message };
     return { athlete: { id: data.user.id, full_name } };
   },
 
   // ---------- حرکات ----------
   async exercisesOf(coachId) {
-    const { data } = await supabase.from("exercises").select("*").eq("coach_id", coachId).order("created_at", { ascending: false });
+    const { data, error } = await supabase.from("exercises").select("*").eq("coach_id", coachId).order("created_at", { ascending: false });
+    if (error) throw error;
     return data || [];
   },
   async addExercise(coachId, name, muscle_group, description, video_url, videoFile) {
     let video_path = null;
     if (videoFile) video_path = await uploadFile("exercise-videos", coachId, videoFile);
-    const { data } = await supabase.from("exercises")
+    const { data, error } = await supabase.from("exercises")
       .insert({ coach_id: coachId, name, muscle_group, description, video_url: video_url || "", video_path })
       .select().single();
+    if (error) throw error;
     return data;
   },
   async exerciseVideoUrl(ex) {
@@ -121,25 +126,37 @@ export const api = {
   // ---------- برنامه (هفته/روز) ----------
   async savePlan(coachId, athlete_id, week, day, title, items) {
     // حذف برنامهٔ قبلی همان روز (unique athlete/week/day)
-    const { data: old } = await supabase.from("workout_plans")
+    const { data: old, error: oldError } = await supabase.from("workout_plans")
       .select("id").eq("athlete_id", athlete_id).eq("week", week).eq("day", day).maybeSingle();
-    if (old) await supabase.from("workout_plans").delete().eq("id", old.id);
+    if (oldError) throw oldError;
+    if (old) {
+      const { error: delError } = await supabase.from("workout_plans").delete().eq("id", old.id);
+      if (delError) throw delError;
+    }
 
-    const { data: plan } = await supabase.from("workout_plans")
+    const { data: plan, error: planError } = await supabase.from("workout_plans")
       .insert({ athlete_id, coach_id: coachId, week, day, title }).select().single();
+    if (planError) throw planError;
     const rows = items.filter(it => it.exercise_id).map((it, idx) => ({
       plan_id: plan.id, exercise_id: it.exercise_id,
       sets: +it.sets || null, reps: it.reps, rest_seconds: +it.rest_seconds || null,
       weight: it.weight, order_index: idx,
     }));
-    if (rows.length) await supabase.from("plan_items").insert(rows);
+    if (rows.length) {
+      const { error: itemsError } = await supabase.from("plan_items").insert(rows);
+      if (itemsError) throw itemsError;
+    }
     return plan;
   },
-  async deletePlan(planId) { await supabase.from("workout_plans").delete().eq("id", planId); },
+  async deletePlan(planId) {
+    const { error } = await supabase.from("workout_plans").delete().eq("id", planId);
+    if (error) throw error;
+  },
 
   async _plansWithItems(athleteId) {
-    const { data: plans } = await supabase.from("workout_plans")
+    const { data: plans, error } = await supabase.from("workout_plans")
       .select("*, plan_items(*, exercises(*))").eq("athlete_id", athleteId);
+    if (error) throw error;
     return (plans || []).map(p => ({
       ...p,
       items: (p.plan_items || []).sort((a, b) => a.order_index - b.order_index)
@@ -158,21 +175,24 @@ export const api = {
     return plans.find(p => p.week === week && p.day === day) || null;
   },
   async plansListOf(athleteId) {
-    const { data } = await supabase.from("workout_plans")
+    const { data, error } = await supabase.from("workout_plans")
       .select("id, week, day, title").eq("athlete_id", athleteId)
       .order("week").order("day");
+    if (error) throw error;
     return data || [];
   },
 
   // ---------- رژیم ----------
   async addDiet(coachId, athlete_id, title, content) {
-    const { data } = await supabase.from("diet_plans")
+    const { data, error } = await supabase.from("diet_plans")
       .insert({ athlete_id, coach_id: coachId, title, content, start_date: today() }).select().single();
+    if (error) throw error;
     return data;
   },
   async dietsOf(athleteId) {
-    const { data } = await supabase.from("diet_plans").select("*").eq("athlete_id", athleteId)
+    const { data, error } = await supabase.from("diet_plans").select("*").eq("athlete_id", athleteId)
       .order("created_at", { ascending: false });
+    if (error) throw error;
     return data || [];
   },
 
@@ -194,30 +214,40 @@ export const api = {
     return data;
   },
   async reportsOf(athleteId) {
-    const { data } = await supabase.from("daily_reports")
+    const { data, error } = await supabase.from("daily_reports")
       .select("*, workout_plans(week, day), report_exercises(*)").eq("athlete_id", athleteId)
       .order("report_date");
+    if (error) throw error;
     return (data || []).map(r => ({ ...r, plan: r.workout_plans, exerciseLogs: (r.report_exercises || []).sort((a, b) => a.order_index - b.order_index) }));
   },
   async reportsForCoach(coachId) {
-    const { data } = await supabase.from("daily_reports")
+    const { data, error } = await supabase.from("daily_reports")
       .select("*, profiles!daily_reports_athlete_id_fkey(full_name), workout_plans(week, day), report_exercises(*)")
       .order("report_date", { ascending: false });
+    if (error) throw error;
     return (data || []).map(r => ({ ...r, athlete: r.profiles, plan: r.workout_plans, exerciseLogs: (r.report_exercises || []).sort((a, b) => a.order_index - b.order_index) }));
   },
-  async markSeen(id) { await supabase.from("daily_reports").update({ coach_seen: true }).eq("id", id); },
+  async markSeen(id) {
+    const { error } = await supabase.from("daily_reports").update({ coach_seen: true }).eq("id", id);
+    if (error) throw error;
+  },
 
   // ---------- عکس پیشرفت ----------
   async addPhoto(athleteId, dataUrl, caption) {
     const path = await uploadDataUrl("progress-photos", athleteId, dataUrl);
-    await supabase.from("progress_photos").insert({ athlete_id: athleteId, path, caption: caption || "" });
+    const { error } = await supabase.from("progress_photos").insert({ athlete_id: athleteId, path, caption: caption || "" });
+    if (error) throw error;
   },
   async photosOf(athleteId) {
-    const { data } = await supabase.from("progress_photos").select("*").eq("athlete_id", athleteId)
+    const { data, error } = await supabase.from("progress_photos").select("*").eq("athlete_id", athleteId)
       .order("created_at", { ascending: false });
+    if (error) throw error;
     return Promise.all((data || []).map(async p => ({ ...p, data: await signedUrl("progress-photos", p.path), date: p.photo_date })));
   },
-  async deletePhoto(id) { await supabase.from("progress_photos").delete().eq("id", id); },
+  async deletePhoto(id) {
+    const { error } = await supabase.from("progress_photos").delete().eq("id", id);
+    if (error) throw error;
+  },
 
   // ---------- آمار و مسیر ----------
   async statsOf(athleteId) {
@@ -248,34 +278,44 @@ export const api = {
   async gymMatesOf(userId) {
     const me = await api.getProfile(userId);
     const coachId = me.role === "coach" ? me.id : me.coach_id;
-    const { data } = await supabase.from("profiles").select("*").eq("coach_id", coachId).neq("id", userId);
+    const { data, error } = await supabase.from("profiles").select("*").eq("coach_id", coachId).neq("id", userId);
+    if (error) throw error;
     return data || [];
   },
   async isFollowing(a, b) {
-    const { data } = await supabase.from("follows").select("follower").eq("follower", a).eq("followee", b).maybeSingle();
+    const { data, error } = await supabase.from("follows").select("follower").eq("follower", a).eq("followee", b).maybeSingle();
+    if (error) throw error;
     return !!data;
   },
   async toggleFollow(a, b) {
     const on = await api.isFollowing(a, b);
-    if (on) await supabase.from("follows").delete().eq("follower", a).eq("followee", b);
-    else await supabase.from("follows").insert({ follower: a, followee: b });
+    const { error } = on
+      ? await supabase.from("follows").delete().eq("follower", a).eq("followee", b)
+      : await supabase.from("follows").insert({ follower: a, followee: b });
+    if (error) throw error;
   },
   async followCounts(id) {
-    const { count: followers } = await supabase.from("follows").select("*", { count: "exact", head: true }).eq("followee", id);
-    const { count: following } = await supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower", id);
+    const { count: followers, error: e1 } = await supabase.from("follows").select("*", { count: "exact", head: true }).eq("followee", id);
+    if (e1) throw e1;
+    const { count: following, error: e2 } = await supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower", id);
+    if (e2) throw e2;
     return { followers: followers || 0, following: following || 0 };
   },
   async partnerOf(id) {
-    const { data } = await supabase.from("partnerships").select("*").or(`a.eq.${id},b.eq.${id}`).maybeSingle();
+    const { data, error } = await supabase.from("partnerships").select("*").or(`a.eq.${id},b.eq.${id}`).maybeSingle();
+    if (error) throw error;
     if (!data) return null;
     return api.getProfile(data.a === id ? data.b : data.a);
   },
   async setPartner(a, b) {
-    await supabase.from("partnerships").delete().or(`a.eq.${a},b.eq.${a},a.eq.${b},b.eq.${b}`);
-    await supabase.from("partnerships").insert({ a, b });
+    const { error: delError } = await supabase.from("partnerships").delete().or(`a.eq.${a},b.eq.${a},a.eq.${b},b.eq.${b}`);
+    if (delError) throw delError;
+    const { error } = await supabase.from("partnerships").insert({ a, b });
+    if (error) throw error;
   },
   async removePartner(id) {
-    await supabase.from("partnerships").delete().or(`a.eq.${id},b.eq.${id}`);
+    const { error } = await supabase.from("partnerships").delete().or(`a.eq.${id},b.eq.${id}`);
+    if (error) throw error;
   },
   async progressScore(id) {
     const list = await api.plansListOf(id);
@@ -295,13 +335,20 @@ export const api = {
   async addPost(author_id, text, imageDataUrl) {
     let image_path = null;
     if (imageDataUrl) image_path = await uploadDataUrl("post-images", author_id, imageDataUrl);
-    await supabase.from("posts").insert({ author_id, text, image_path });
+    const { error } = await supabase.from("posts").insert({ author_id, text, image_path });
+    if (error) throw error;
   },
-  async deletePost(id) { await supabase.from("posts").delete().eq("id", id); },
+  async deletePost(id) {
+    const { error } = await supabase.from("posts").delete().eq("id", id);
+    if (error) throw error;
+  },
   async feed(userId) {
-    const { data: posts } = await supabase.from("posts")
-      .select("*, profiles(*), post_likes(user_id), post_comments(*)")
+    // توجه: "profiles" باید صریحاً از طریق posts_author_id_fkey مشخص شود، چون
+    // post_likes هم یک مسیر دوم به profiles می‌سازد و باعث ابهام رابطه در PostgREST می‌شود.
+    const { data: posts, error } = await supabase.from("posts")
+      .select("*, profiles!posts_author_id_fkey(*), post_likes(user_id), post_comments(*)")
       .order("created_at", { ascending: false });
+    if (error) throw error;
     return Promise.all((posts || []).map(async p => ({
       ...p,
       author: p.profiles,
@@ -313,24 +360,30 @@ export const api = {
     })));
   },
   async toggleLike(postId, userId) {
-    const { data } = await supabase.from("post_likes").select("*").eq("post_id", postId).eq("user_id", userId).maybeSingle();
-    if (data) await supabase.from("post_likes").delete().eq("post_id", postId).eq("user_id", userId);
-    else await supabase.from("post_likes").insert({ post_id: postId, user_id: userId });
+    const { data, error } = await supabase.from("post_likes").select("*").eq("post_id", postId).eq("user_id", userId).maybeSingle();
+    if (error) throw error;
+    const { error: writeError } = data
+      ? await supabase.from("post_likes").delete().eq("post_id", postId).eq("user_id", userId)
+      : await supabase.from("post_likes").insert({ post_id: postId, user_id: userId });
+    if (writeError) throw writeError;
   },
   async addComment(postId, userId, text) {
-    await supabase.from("post_comments").insert({ post_id: postId, user_id: userId, text });
+    const { error } = await supabase.from("post_comments").insert({ post_id: postId, user_id: userId, text });
+    if (error) throw error;
   },
 
   // ---------- استوری ----------
   async addStory(author_id, { image, text, bg }) {
     let image_path = null;
     if (image) image_path = await uploadDataUrl("story-images", author_id, image);
-    await supabase.from("stories").insert({ author_id, image_path, text: text || "", bg: bg || "" });
+    const { error } = await supabase.from("stories").insert({ author_id, image_path, text: text || "", bg: bg || "" });
+    if (error) throw error;
   },
   async storiesGrouped(userId) {
-    const { data } = await supabase.from("stories")
-      .select("*, profiles(*)").gt("expires_at", new Date().toISOString())
+    const { data, error } = await supabase.from("stories")
+      .select("*, profiles!stories_author_id_fkey(*)").gt("expires_at", new Date().toISOString())
       .order("created_at");
+    if (error) throw error;
     const groups = {};
     for (const s of data || []) {
       s.image = s.image_path ? await publicUrl("story-images", s.image_path) : "";
