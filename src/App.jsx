@@ -5,9 +5,11 @@ import "./styles.css";
 import {
   Dumbbell, Home, Users, Calendar, Apple, BarChart3, LogOut, Bell,
   Video, Camera, ChevronRight, RotateCcw, User, ClipboardList, Trash2, Menu, X,
-  Newspaper, PlusSquare, Swords
+  Newspaper, PlusSquare, Swords, Download, Activity
 } from "lucide-react";
 import { FeedPage, MatesPage, CreateModal } from "./social.jsx";
+import { exportPlanPdf } from "./pdf.js";
+import { bodyComposition } from "./bodycomp.js";
 
 // ============================================================
 //  ریشه
@@ -321,6 +323,7 @@ function AthleteProfile({ me, athleteId, back, coachView }) {
   const refresh = () => { reloadA(); reloadS(); reloadP(); };
   if (!a) return <div className="card">در حال بارگذاری…</div>;
   const age = a.birth_year ? (1405 - a.birth_year) : null;
+  const bc = bodyComposition({ sex: a.sex, height_cm: a.height_cm, weight_kg: s?.lastW ?? a.weight_kg, neck_cm: a.neck_cm, waist_cm: a.waist_cm, hip_cm: a.hip_cm });
 
   const upload = (file, cb) => {
     const img = new Image(), url = URL.createObjectURL(file);
@@ -380,6 +383,35 @@ function AthleteProfile({ me, athleteId, back, coachView }) {
       </div>
 
       <div className="card">
+        <h3><Activity size={16} style={{ verticalAlign: -2, marginLeft: 6 }} />ترکیب بدنی</h3>
+        <p className="sub" style={{ marginTop: -8 }}>BMI و درصد چربی بدن — روش علمی نیروی دریایی آمریکا</p>
+        {bc.missing ? (
+          <p className="muted">برای محاسبه، «{bc.missing}» را در «ویرایش مشخصات» ثبت کن.</p>
+        ) : (
+          <div className="grid g3">
+            <div className="stat">
+              <b style={{ color: bc.bmiCat?.color }}>{bc.bmi}</b>
+              <span>BMI · {bc.bmiCat?.label}</span>
+            </div>
+            <div className="stat">
+              <b style={{ color: "var(--accent)" }}>{bc.bodyFat != null ? bc.bodyFat + "%" : "—"}</b>
+              <span>چربی بدن · {bc.bodyFatCat}</span>
+            </div>
+            <div className="stat">
+              <b>{bc.leanMass != null ? bc.leanMass + "kg" : "—"}</b>
+              <span>تودهٔ بدون چربی</span>
+            </div>
+          </div>
+        )}
+        {(a.arm_cm || a.thigh_cm) && (
+          <div className="muted" style={{ marginTop: 14, fontSize: 13, display: "flex", gap: 18 }}>
+            {a.arm_cm && <span>دور بازو: {a.arm_cm}cm</span>}
+            {a.thigh_cm && <span>دور ران: {a.thigh_cm}cm</span>}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <div><h3>عکس‌های پیشرفت</h3><p className="sub" style={{ margin: 0 }}>{photos?.length || 0} عکس</p></div>
           <button className="btn btn-sm" onClick={() => fileRef.current.click()}><Camera size={14} style={{ marginLeft: 6 }} /> افزودن عکس</button>
@@ -426,19 +458,57 @@ function AthleteProfile({ me, athleteId, back, coachView }) {
 }
 
 function EditProfile({ a, onSave }) {
-  const [f, setF] = useState({ full_name: a.full_name, phone: a.phone || "", birth_year: a.birth_year || "", height_cm: a.height_cm || "", goal: a.goal || "" });
+  const [f, setF] = useState({
+    full_name: a.full_name, phone: a.phone || "", birth_year: a.birth_year || "", height_cm: a.height_cm || "", goal: a.goal || "",
+    sex: a.sex || "", weight_kg: a.weight_kg || "", neck_cm: a.neck_cm || "", waist_cm: a.waist_cm || "",
+    hip_cm: a.hip_cm || "", arm_cm: a.arm_cm || "", thigh_cm: a.thigh_cm || "",
+  });
+  const num = k => ({ value: f[k], onChange: e => setF({ ...f, [k]: e.target.value }) });
+  const save = async () => {
+    await api.updateProfile(a.id, {
+      full_name: f.full_name, phone: f.phone, goal: f.goal, sex: f.sex || null,
+      birth_year: +f.birth_year || null, height_cm: +f.height_cm || null, weight_kg: +f.weight_kg || null,
+      neck_cm: +f.neck_cm || null, waist_cm: +f.waist_cm || null, hip_cm: +f.hip_cm || null,
+      arm_cm: +f.arm_cm || null, thigh_cm: +f.thigh_cm || null,
+    });
+    onSave();
+  };
   return (
     <div className="card">
       <h3>ویرایش مشخصات</h3>
       <div className="grid g2">
-        <div><label className="lbl">نام کامل</label><input className="input" value={f.full_name} onChange={e => setF({ ...f, full_name: e.target.value })} /></div>
-        <div><label className="lbl">تلفن</label><input className="input" value={f.phone} onChange={e => setF({ ...f, phone: e.target.value })} /></div>
-        <div><label className="lbl">سال تولد (شمسی)</label><input className="input" value={f.birth_year} onChange={e => setF({ ...f, birth_year: e.target.value })} /></div>
-        <div><label className="lbl">قد (cm)</label><input className="input" value={f.height_cm} onChange={e => setF({ ...f, height_cm: e.target.value })} /></div>
+        <div><label className="lbl">نام کامل</label><input className="input" {...num("full_name")} /></div>
+        <div><label className="lbl">تلفن</label><input className="input" {...num("phone")} /></div>
+        <div><label className="lbl">سال تولد (شمسی)</label><input className="input" {...num("birth_year")} /></div>
+        <div><label className="lbl">قد (cm)</label><input className="input" {...num("height_cm")} /></div>
       </div>
       <label className="lbl">هدف</label>
-      <input className="input" placeholder="مثلا افزایش حجم" value={f.goal} onChange={e => setF({ ...f, goal: e.target.value })} />
-      <button className="btn" onClick={async () => { await api.updateProfile(a.id, { ...f, birth_year: +f.birth_year || null, height_cm: +f.height_cm || null }); onSave(); }}>ذخیره</button>
+      <input className="input" placeholder="مثلا افزایش حجم" {...num("goal")} />
+
+      <h3 style={{ marginTop: 18 }}>اندازه‌های بدنی</h3>
+      <p className="sub" style={{ marginTop: -8 }}>برای محاسبهٔ خودکار BMI و درصد چربی بدن</p>
+      <div className="grid g2">
+        <div>
+          <label className="lbl">جنسیت</label>
+          <select className="input" {...num("sex")}>
+            <option value="">— انتخاب —</option>
+            <option value="male">مرد</option>
+            <option value="female">زن</option>
+          </select>
+        </div>
+        <div><label className="lbl">وزن (kg)</label><input className="input" {...num("weight_kg")} /></div>
+        <div><label className="lbl">دور گردن (cm)</label><input className="input" {...num("neck_cm")} /></div>
+        <div><label className="lbl">دور کمر (cm)</label><input className="input" {...num("waist_cm")} /></div>
+        <div>
+          <label className="lbl">دور باسن (cm) {f.sex === "female" && <span style={{ color: "var(--accent)" }}>*</span>}</label>
+          <input className="input" {...num("hip_cm")} />
+        </div>
+        <div><label className="lbl">دور بازو (cm)</label><input className="input" {...num("arm_cm")} /></div>
+        <div><label className="lbl">دور ران (cm)</label><input className="input" {...num("thigh_cm")} /></div>
+      </div>
+      {f.sex === "female" && <p className="small muted" style={{ marginTop: -6 }}>* برای محاسبهٔ چربی بدن در خانم‌ها، دور باسن لازم است.</p>}
+
+      <button className="btn" onClick={save}>ذخیره</button>
     </div>
   );
 }
@@ -527,6 +597,7 @@ function PlanBuilder({ me }) {
     setMsg("");
   }, [existing]);
 
+  const athlete = (athletes || []).find(a => a.id === athleteId);
   const maxWeek = Math.max(4, ...(planList || []).map(p => p.week), 1) + 1;
   const setItem = (i, k, v) => setItems(items.map((it, idx) => idx === i ? { ...it, [k]: v } : it));
   const hasPlan = (w, d) => (planList || []).some(p => p.week === w && p.day === d);
@@ -583,18 +654,38 @@ function PlanBuilder({ me }) {
           {msg && <p className="muted">{msg}</p>}
         </div>
       </div>
-      {athleteId && <WeeksOverview athleteId={athleteId} key={athleteId + (planList?.length || 0)} />}
+      {athleteId && (
+        <WeeksOverview
+          athleteId={athleteId}
+          athleteName={athlete?.full_name}
+          coachName={me.full_name}
+          goal={athlete?.goal}
+          key={athleteId + (planList?.length || 0)}
+        />
+      )}
     </div>
   );
 }
 
-function WeeksOverview({ athleteId }) {
+function WeeksOverview({ athleteId, athleteName, coachName, goal }) {
   const [weeks] = useAsync(() => api.weeksOf(athleteId), [athleteId]);
+  const [busy, setBusy] = useState(false);
   const keys = Object.keys(weeks || {}).sort((a, b) => a - b);
   if (!weeks || keys.length === 0) return null;
+  const download = async () => {
+    setBusy(true);
+    try {
+      await exportPlanPdf({ athleteName, coachName, goal, weeks: keys.map(w => ({ week: w, plans: weeks[w] })) });
+    } finally { setBusy(false); }
+  };
   return (
     <div className="card">
-      <h3>نمای کلی برنامه</h3>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h3 style={{ margin: 0 }}>نمای کلی برنامه</h3>
+        <button className="btn btn-sm btn-gray" onClick={download} disabled={busy}>
+          <Download size={14} style={{ marginLeft: 6 }} /> {busy ? "در حال ساخت…" : "دانلود PDF"}
+        </button>
+      </div>
       {keys.map(w => (
         <div key={w} style={{ marginBottom: 14 }}>
           <b>هفته {w}</b>
@@ -686,12 +777,20 @@ function CoachReports({ me }) {
 function CoachTab({ me }) {
   const [data] = useAsync(() => api.effectiveWeeksOf(me.id), []);
   const [jr] = useAsync(() => api.journeyOf(me.id), []);
+  const [coach] = useAsync(() => me.coach_id ? api.getProfile(me.coach_id) : Promise.resolve(null), [me.coach_id]);
   const [week, setWeek] = useState(null);
   const [openSession, setOpenSession] = useState(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const weeks = data?.weeks || {};
   const keys = Object.keys(weeks).map(Number).sort((a, b) => a - b);
   React.useEffect(() => { if (keys.length && week == null) setWeek(keys[0]); }, [data]);
   const plans = weeks[week] || [];
+  const download = async () => {
+    setPdfBusy(true);
+    try {
+      await exportPlanPdf({ athleteName: me.full_name, coachName: coach?.full_name, goal: me.goal, weeks: keys.map(w => ({ week: w, plans: weeks[w] })) });
+    } finally { setPdfBusy(false); }
+  };
 
   return (
     <div style={{ maxWidth: 640 }}>
@@ -711,6 +810,13 @@ function CoachTab({ me }) {
             <b>برنامه مشترک با {data.partner.full_name} ⚔️</b>
             <div className="small">بر اساس برنامهٔ {data.source.id === me.id ? "شما (پیشرفته‌تر)" : data.source.full_name + " (پیشرفته‌تر)"}</div>
           </div>
+        </div>
+      )}
+      {keys.length > 0 && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+          <button className="btn btn-sm btn-gray" onClick={download} disabled={pdfBusy}>
+            <Download size={14} style={{ marginLeft: 6 }} /> {pdfBusy ? "در حال ساخت…" : "دانلود PDF برنامه"}
+          </button>
         </div>
       )}
       <div className="chips">
