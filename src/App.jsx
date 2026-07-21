@@ -25,8 +25,8 @@ export default function App() {
 //  ورود
 // ============================================================
 function Login({ onLogin }) {
-  const [email, setEmail] = useState("coach@test.ir");
-  const [pass, setPass] = useState("1234");
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const go = async () => {
@@ -46,11 +46,6 @@ function Login({ onLogin }) {
         <input className="input" type="password" placeholder="رمز عبور" value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key === "Enter" && go()} />
         <button className="btn" style={{ width: "100%" }} onClick={go} disabled={busy}>{busy ? "…" : "ورود"}</button>
         {msg && <p style={{ color: "var(--red)", fontSize: 14 }}>{msg}</p>}
-        <div className="muted" style={{ marginTop: 14, background: "var(--bg)", padding: 12, borderRadius: 10, lineHeight: 1.9 }}>
-          <b>حساب‌های تستی</b> (رمز همه: 1234)<br />
-          مربی: coach@test.ir<br />
-          ورزشجو: ali@test.ir | sara@test.ir
-        </div>
       </div>
     </div>
   );
